@@ -1,0 +1,13 @@
+# Python specific
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Database files
+*.db
+*.sqlite3
+
+# IDE / Editor specific
+.vscode/
+.idea/
