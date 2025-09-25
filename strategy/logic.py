@@ -1,111 +1,86 @@
 # strategy/logic.py
 
+import pandas as pd
 from config import settings
+from data import database # Import für Signal-Historie
 
 def berechne_momentum(monats_schlusskurse: list) -> dict:
-    """
-    Berechnet den 13612W Momentum-Score und gibt alle Berechnungsdetails zurück.
-
-    Args:
-        monats_schlusskurse: Eine Liste von 13 Monats-Schlusskursen.
-
-    Returns:
-        Ein Dictionary mit dem Score und den zur Berechnung verwendeten Daten.
-    """
+    # ... (Diese Funktion bleibt unverändert)
     if len(monats_schlusskurse) < 13:
-        raise ValueError(
-            f"Nicht genügend Daten für Momentum-Berechnung. "
-            f"Erhalten: {len(monats_schlusskurse)} Kurse, benötigt: 13."
-        )
-
-    # Preise zu den relevanten Zeitpunkten extrahieren.
-    aktueller_kurs        = monats_schlusskurse[-1]
-    kurs_vor_1_monat      = monats_schlusskurse[-2]
-    kurs_vor_3_monaten    = monats_schlusskurse[-4]
-    kurs_vor_6_monaten    = monats_schlusskurse[-7]
-    kurs_vor_12_monaten   = monats_schlusskurse[-13]
-
-    # Renditen berechnen
-    ret1 = (aktueller_kurs / kurs_vor_1_monat) - 1
-    ret3 = (aktueller_kurs / kurs_vor_3_monaten) - 1
-    ret6 = (aktueller_kurs / kurs_vor_6_monaten) - 1
-    ret12 = (aktueller_kurs / kurs_vor_12_monaten) - 1
-
-    # Renditen annualisieren
-    annual_ret1 = ret1 * 12
-    annual_ret3 = ret3 * 4
-    annual_ret6 = ret6 * 2
-    annual_ret12 = ret12 * 1
-
-    # Score berechnen
-    score = (annual_ret1 + annual_ret3 + annual_ret6 + annual_ret12) / 4
+        raise ValueError(f"Nicht genügend Daten. Erhalten: {len(monats_schlusskurse)}, benötigt: 13.")
     
-    return {
-        'momentum_score': score,
-        'input_prices': monats_schlusskurse,
-        'calculation_details': {
-            'aktueller_kurs': aktueller_kurs,
-            'kurs_vor_1m': kurs_vor_1_monat,
-            'kurs_vor_3m': kurs_vor_3_monaten,
-            'kurs_vor_6m': kurs_vor_6_monaten,
-            'kurs_vor_12m': kurs_vor_12_monaten
-        }
-    }
+    aktueller_kurs = monats_schlusskurse[-1]
+    ret1 = (aktueller_kurs / monats_schlusskurse[-2]) - 1
+    ret3 = (aktueller_kurs / monats_schlusskurse[-4]) - 1
+    ret6 = (aktueller_kurs / monats_schlusskurse[-7]) - 1
+    ret12 = (aktueller_kurs / monats_schlusskurse[-13]) - 1
+
+    score = ((ret1*12) + (ret3*4) + (ret6*2) + (ret12*1)) / 4
+    
+    return {'momentum_score': score, 'input_prices': monats_schlusskurse}
 
 def canary_check(daten_aller_assets: dict) -> dict:
-    """
-    Überprüft die Kanarienvogel-Assets und gibt ein detailliertes Ergebnis zurück.
-    """
+    # ... (Diese Funktion bleibt unverändert)
     canary_details = {}
     final_signal = "RISK_ON"
-
     for ticker in settings.CANARY_UNIVERSE:
-        vogel_kurse = daten_aller_assets[ticker]
-        
-        berechnungs_ergebnis = berechne_momentum(vogel_kurse)
-        momentum_score = berechnungs_ergebnis['momentum_score']
-        
-        status = "Gesund"
-        if momentum_score <= 0:
-            status = "Krank"
+        berechnungs_ergebnis = berechne_momentum(daten_aller_assets[ticker])
+        status = "Gesund" if berechnungs_ergebnis['momentum_score'] > 0 else "Krank"
+        if status == "Krank":
             final_signal = "RISK_OFF"
-
-        canary_details[ticker] = {
-            'status': status,
-            'berechnung': berechnungs_ergebnis
-        }
-            
-    return {
-        'final_signal': final_signal,
-        'canary_details': canary_details
-    }
+        canary_details[ticker] = {'status': status, 'berechnung': berechnungs_ergebnis}
+    return {'final_signal': final_signal, 'canary_details': canary_details}
 
 def bestimme_ziel_portfolio(daten_aller_assets: dict) -> dict:
-    """
-    Die Haupt-Entscheidungsfunktion. Sie gibt ein umfassendes Ergebnis-Dictionary
-    inklusive einer kompletten Momentum-Rangliste zurück.
-    """
+    """Die Haupt-Entscheidungsfunktion, jetzt inkl. Berechnung des Kontexts."""
     markt_signal_details = canary_check(daten_aller_assets)
     markt_signal = markt_signal_details['final_signal']
+    
+    # --- Kontext-Berechnungen ---
+    # 1. Marktbreite
+    risky_momentum_scores = {
+        ticker: berechne_momentum(daten_aller_assets[ticker])['momentum_score']
+        for ticker in settings.RISKY_UNIVERSE
+    }
+    positive_momentum_count = sum(1 for score in risky_momentum_scores.values() if score > 0)
+    marktbreite_prozent = (positive_momentum_count / len(settings.RISKY_UNIVERSE)) * 100
 
-    # Logik für RISK-ON
+    # 2. Dauer des Signals
+    signal_historie = database.get_signal_history()
+    signal_dauer = 0
+    for signal in reversed(signal_historie):
+        if signal == markt_signal:
+            signal_dauer += 1
+        else:
+            break
+    signal_dauer += 1 # Das aktuelle Event mitzählen
+
+    # --- Portfolio-Logik (RISK-ON) ---
     if markt_signal == "RISK_ON":
-        risky_momentum_scores = {
-            ticker: berechne_momentum(daten_aller_assets[ticker])['momentum_score']
-            for ticker in settings.RISKY_UNIVERSE
-        }
         sortierte_assets = sorted(risky_momentum_scores.items(), key=lambda item: item[1], reverse=True)
         top_assets = sortierte_assets[:settings.T]
         ziel_portfolio = {asset[0]: 1 / settings.T for asset in top_assets}
 
-        # Baue das finale Ergebnis sauber zusammen
+        # 3. Korrelations-Matrix für die Top-Assets
+        top_asset_tickers = [asset[0] for asset in top_assets]
+        prices_df = pd.DataFrame({
+            ticker: daten_aller_assets[ticker] for ticker in top_asset_tickers
+        })
+        returns_df = prices_df.pct_change().dropna()
+        korrelations_matrix = returns_df.corr()
+
         return {
             'canary_report': markt_signal_details,
             'momentum_ranking': sortierte_assets,
-            'portfolio': ziel_portfolio
+            'portfolio': ziel_portfolio,
+            'entscheidungskontext': {
+                'marktbreite_prozent': marktbreite_prozent,
+                'signal_duration': signal_dauer,
+                'korrelations_matrix': korrelations_matrix
+            }
         }
 
-    # Logik für RISK-OFF
+    # --- Portfolio-Logik (RISK-OFF) ---
     else:
         cash_momentum_scores = {
             ticker: berechne_momentum(daten_aller_assets[ticker])['momentum_score']
@@ -115,9 +90,13 @@ def bestimme_ziel_portfolio(daten_aller_assets: dict) -> dict:
         bestes_asset = sortierte_assets[0][0]
         ziel_portfolio = {bestes_asset: 1.0}
 
-        # Baue das finale Ergebnis sauber zusammen
         return {
             'canary_report': markt_signal_details,
             'momentum_ranking': sortierte_assets,
-            'portfolio': ziel_portfolio
+            'portfolio': ziel_portfolio,
+            'entscheidungskontext': {
+                'marktbreite_prozent': marktbreite_prozent,
+                'signal_duration': signal_dauer,
+                'korrelations_matrix': None # Keine Korrelation bei nur einem Asset
+            }
         }

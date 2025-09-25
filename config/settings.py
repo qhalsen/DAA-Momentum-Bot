@@ -96,3 +96,14 @@ CASH_UNIVERSE: list[str] = ["IB01", "IBTA"]
 T: int = 2  # Top-n
 B: int = 1  # Breadth → DAA1-G12 (aggressiv)
 
+# === Risiko- & Performance-Parameter ========================================
+# Annualisierter risikofreier Zinssatz für Sharpe/Sortino/Treynor Ratio
+RISK_FREE_RATE: float = 0.02 # Annahme von 2%
+
+# === Benchmark-Konfiguration ================================================
+# Definiere hier die Ticker und ihre prozentuale Gewichtung für den Benchmark-Vergleich.
+# Die Summe der Gewichtungen sollte 1.0 ergeben (100%).
+BENCHMARK_COMPONENTS: dict[str, float] = {
+    "SXR8": 0.70,  # 70% MSCI World (via S&P 500 Proxy)
+    "EMIM": 0.30   # 30% Emerging Markets
+}
