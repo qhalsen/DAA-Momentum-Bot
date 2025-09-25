@@ -3,7 +3,7 @@ import os
 import time
 import threading
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 # --- Python den Weg zu den Modulen zeigen ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -94,7 +94,7 @@ def run_monthly_rebalancing():
     print("\nSchritt 5: Speichere Ergebnis in der Historie...")
     
     # Füge finale Daten zum Ergebnis-Report hinzu
-    strategie_ergebnis['timestamp_utc'] = datetime.utcnow().isoformat()
+    strategie_ergebnis['timestamp_utc'] = datetime.now(timezone.utc).isoformat()
     strategie_ergebnis['total_portfolio_value'] = total_portfolio_value
     strategie_ergebnis['calculated_trades'] = trades
 

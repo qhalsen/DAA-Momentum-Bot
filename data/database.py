@@ -2,6 +2,8 @@ import sqlite3
 import pandas as pd
 from config import settings
 import os
+import json
+from datetime import datetime, timezone
 
 # Der Name unserer lokalen Datenbankdatei
 DB_FILE = "etf_data.db"
@@ -83,20 +85,58 @@ def get_prices_for_ticker(ticker: str, limit: int = 13) -> list:
     finally:
         conn.close()
 
+def initialize_reporting_tables():
+    """Erstellt die Tabellen, die für das erweiterte Reporting benötigt werden."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Eine Tabelle, um den Portfoliowert über die Zeit zu verfolgen
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS portfolio_history (
+            timestamp TEXT PRIMARY KEY,
+            total_value REAL NOT NULL,
+            cash REAL NOT NULL,
+            positions_json TEXT
+        )
+    """)
+    
+    conn.commit()
+    conn.close()
+    print("Reporting-Tabellen initialisiert.")
+
+def save_portfolio_snapshot(total_value: float, cash: float, positions: dict):
+    """Speichert eine Momentaufnahme des Portfoliowertes in der Datenbank."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    timestamp = datetime.now(timezone.utc).isoformat()
+    positions_json = json.dumps(positions)
+    
+    cursor.execute("""
+        INSERT INTO portfolio_history (timestamp, total_value, cash, positions_json)
+        VALUES (?, ?, ?, ?)
+    """, (timestamp, total_value, cash, positions_json))
+    
+    conn.commit()
+    conn.close()
+    print(f"Portfolio-Snapshot ({total_value:.2f} EUR) in der Datenbank gespeichert.")
+
+
 # --- Testbereich ---
 if __name__ == "__main__":
     print("Initialisiere die Datenbank...")
     initialize_database()
+    initialize_reporting_tables() # Hinzugefügt
     
     # Erstelle fiktive Testdaten mit Pandas
     test_dates = pd.to_datetime(pd.date_range(end='2025-07-31', periods=20, freq='M')).strftime('%Y-%m-%d')
     test_prices = [100 + i for i in range(20)]
     test_df = pd.DataFrame({'date': test_dates, 'close': test_prices})
     
-    print("\nSpeichere Testdaten für SPY...")
-    save_prices_for_ticker("SPY", test_df)
+    print("\nSpeichere Testdaten für SXR8...")
+    save_prices_for_ticker("SXR8", test_df)
     
-    print("\nHole die letzten 13 Kurse für SPY...")
-    spy_prices = get_prices_for_ticker("SPY")
-    print(f"Gelesene Kurse: {spy_prices}")
-    print(f"Anzahl der Kurse: {len(spy_prices)}")
+    print("\nHole die letzten 13 Kurse für SXR8...")
+    sxr8_prices = get_prices_for_ticker("SXR8")
+    print(f"Gelesene Kurse: {sxr8_prices}")
+    print(f"Anzahl der Kurse: {len(sxr8_prices)}")
